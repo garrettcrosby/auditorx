@@ -1,0 +1,10 @@
+name: web-server
+host: 10.0.0.100
+type: server
+secret_path: /v1/kv/net/server-credentials
+files:
+  - /etc/webserver/webserver.conf
+  - /etc/someotherservice/config.ini
+dirs:
+  - /etc/apache
+  - /etc/raddb
