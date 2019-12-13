@@ -1,0 +1,5 @@
+name: cisco-switch
+host: 10.0.0.100
+type: cisco_ios
+secret_path: /v1/kv/net/cisco-login
+cmd: 'show running-config'
