@@ -1,0 +1,12 @@
+version: '3.2'
+services:
+  auditor:
+    image: auditorx
+    build: .
+    env_file: env.list
+    stdin_open: true
+    tty: true
+    volumes:
+      - type: bind
+        source: '${GIT_REPO}'
+        target: '${GIT_REPO}'
