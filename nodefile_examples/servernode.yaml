@@ -8,3 +8,4 @@ files:
 dirs:
   - /etc/apache
   - /etc/raddb
+  - /etc/somedir
