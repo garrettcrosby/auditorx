@@ -5,11 +5,28 @@ import time
 import json
 import subprocess
 import node
+import logging
+import logging.handlers
+import socket
+import sys
+
+#sets env variables for testing
+def testing():
+    os.environ['HOSTS_FILE'] = '/Users/garrettcrosby/.ssh/known_hosts'
+    os.environ['GIT_REPO'] = '/Users/garrettcrosby/netconfig'
+    os.environ['VAULT_SERVER'] = 'https://172.16.50.43:8200'
+    os.environ['CA_FILE'] = '/Users/garrettcrosby/ca-bundle.pem'
+    os.environ['VAULT_ROLE_ID'] = '9468b84d-227b-d341-eba8-d8bdd32afa7e'
+    os.environ['VAULT_SECRET_ID'] = 'e60db88a-5d3b-ab09-3245-e8c551bceabf'
+    os.environ['SYSLOG_SERVER'] = '172.16.50.34'
+    os.environ['SYSLOG_PORT'] = '51400'
 
 class Auditor(object):
 
     def __init__(self):
         #grab environment vars
+        self.syslog_server = os.getenv('SYSLOG_SERVER')
+        self.syslog_port = os.getenv('SYSLOG_PORT')
         self.known_hosts = os.getenv('HOSTS_FILE')
         self.git_repo = os.getenv('GIT_REPO')
         self.vault_server = os.getenv('VAULT_SERVER')
@@ -23,26 +40,43 @@ class Auditor(object):
         self.changed = False
         self.modified_files = {}
 
+    def setup_logger(self):
+        self.logger = logging.getLogger('syslog')
+        self.logger.setLevel(logging.DEBUG)
+        syslog_port = int(self.syslog_port)
+        syslog_handler = logging.handlers.SysLogHandler(
+            address=(self.syslog_server, syslog_port),
+            socktype=socket.SOCK_DGRAM)
+        self.logger.addHandler(syslog_handler)
+        self.logger.info('AuditorX logging initialized.')
+
     def find_node_files(self):
         node_files = []
         for (dirpath, dirnames, filenames) in os.walk(self.node_file_dir):
-            for node_file in filenames:
-                node_files.append(os.path.join(dirpath, node_file))
+            for file in filenames:
+                if file[-4:] == 'yaml' or file[-3:] == 'yml':
+                    node_files.append(os.path.join(dirpath, file))
         return node_files
 
     def run_audit(self):
         #auth to vault server, so we can retrieve secrets for each node
+        self.logger.info('Beginning audit.')
         self.vault_access = node.VaultConnection(self.vault_server, self.role_id,
                                                  self.secret_id, self.ca)
-        self.vault_access.login()
+        self.logger.info('Attempting to login to Vault server.')
+        try:
+            self.vault_access.login()
+            self.logger.info('AuditorX successfully logged in to Vault server.')
+        except:
+            self.logger.error('AuditorX could not log in to Vault! Exiting.')
+            sys.exit()
         for file in self.node_files:
             self.handle_node(file)
 
     def handle_node(self, node_file):
-        with open(node_file, 'r') as f:
+        with open(node_file, 'rb') as f:
             node_config = yaml.full_load(f)
         if node_config['type'].lower() == 'server':
-            pass
             self.server_audit(node_config)
         else:
             self.network_audit(node_config)
@@ -52,14 +86,19 @@ class Auditor(object):
         server.name = config['name']
         server.host = config['host']
         server.secret_path = config['secret_path']
-        server.files = config['files']
-        server.dirs = config['dirs']
+        if 'files' in config:
+            server.files = config['files']
+        if 'dirs' in config:
+            server.dirs = config['dirs']
+        if 'port' in config:
+            server.port = config['port']
         server.known_hosts = self.known_hosts
         login_info = self.vault_access.get_secret(server.secret_path)
         for key, value in login_info.items():
             server.user = key
             server.password = value
 
+        self.logger.info('Instantiation complete. Beginning audit of {}'.format(server.name))
         server.connect()
         server.metadata_dir = '{0}/{1}'.format(self.metadata_dir, server.name)
         server.check_files()
@@ -69,6 +108,7 @@ class Auditor(object):
         server.write_metadata()
         if server.modified_files != {}:
             self.changed = True
+            self.logger.warning('Found changed files on {}'.format(server.name))
         #dict comprehension to edit keys in modified files to paths friendly to git
         git_friendly = {('metadata/{0}/{1}'.format(server.name, k)): v for k, v in server.modified_files.items()}
         for file, action in git_friendly.items():
@@ -88,6 +128,7 @@ class Auditor(object):
             appliance.user = key
             appliance.password = value
 
+        self.logger.info('Instantiation complete. Beginning audit of {}'.format(appliance.name))
         #generates new attr, appliance.config as result of get_new_config method
         appliance.get_new_config()
         appliance.sanitize_data()
@@ -98,11 +139,13 @@ class Auditor(object):
         compare = appliance.compare_config()
         if compare == True:
             self.changed = True
+            self.logger.warning('Found changed files on {}'.format(server.name))
 
         for file in appliance.modified_files:
             self.modified_files.update({file: 'add'})
 
     def push_git(self):
+        self.logger.warning('AudiorX beginning git operations.')
         repo = Repo(self.git_repo)
         untracked = repo.untracked_files
         tracked = self.git_tracked_files()
@@ -118,8 +161,10 @@ class Auditor(object):
             elif action == 'delete':
                 repo.index.remove(file, working_tree=True, force=True)
         repo.git.commit(m='Automated commit from auditorx')
+        self.logger.info('Sucessful git commit from AuditorX')
         origin = repo.remote(name='origin')
         origin.push()
+        self.logger.info('Sucessful git push from AuditorX')
 
     def git_tracked_files(self):
         tracked_files = []
@@ -131,10 +176,14 @@ class Auditor(object):
         return tracked_files
 
 def main():
+    testing()
     auditor_instance = Auditor()
+    auditor_instance.setup_logger()
     auditor_instance.run_audit()
     if auditor_instance.changed == True:
         auditor_instance.push_git()
+    else:
+        auditor_instance.logger.info('No changes found, skipping git operations.')
 
 if __name__ == '__main__':
     main()
