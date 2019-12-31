@@ -139,7 +139,7 @@ class Auditor(object):
         compare = appliance.compare_config()
         if compare == True:
             self.changed = True
-            self.logger.warning('Found changed files on {}'.format(server.name))
+            self.logger.warning('Found changed files on {}'.format(appliance.name))
 
         for file in appliance.modified_files:
             self.modified_files.update({file: 'add'})
