@@ -12,14 +12,14 @@ import sys
 
 #sets env variables for testing
 def testing():
-    os.environ['HOSTS_FILE'] = '/Users/garrettcrosby/.ssh/known_hosts'
-    os.environ['GIT_REPO'] = '/Users/garrettcrosby/netconfig'
-    os.environ['VAULT_SERVER'] = 'https://172.16.50.43:8200'
-    os.environ['CA_FILE'] = '/Users/garrettcrosby/ca-bundle.pem'
-    os.environ['VAULT_ROLE_ID'] = '9468b84d-227b-d341-eba8-d8bdd32afa7e'
-    os.environ['VAULT_SECRET_ID'] = 'e60db88a-5d3b-ab09-3245-e8c551bceabf'
-    os.environ['SYSLOG_SERVER'] = '172.16.50.34'
-    os.environ['SYSLOG_PORT'] = '51400'
+    os.environ['HOSTS_FILE'] = ''
+    os.environ['GIT_REPO'] = ''
+    os.environ['VAULT_SERVER'] = ''
+    os.environ['CA_FILE'] = ''
+    os.environ['VAULT_ROLE_ID'] = ''
+    os.environ['VAULT_SECRET_ID'] = ''
+    os.environ['SYSLOG_SERVER'] = ''
+    os.environ['SYSLOG_PORT'] = ''
 
 class Auditor(object):
 
