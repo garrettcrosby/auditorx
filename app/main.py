@@ -20,7 +20,6 @@ def testing():
     os.environ['VAULT_SECRET_ID'] = ''
     os.environ['SYSLOG_SERVER'] = ''
     os.environ['SYSLOG_PORT'] = ''
-
 class Auditor(object):
 
     def __init__(self):
@@ -67,8 +66,9 @@ class Auditor(object):
         try:
             self.vault_access.login()
             self.logger.info('AuditorX successfully logged in to Vault server.')
-        except:
-            self.logger.error('AuditorX could not log in to Vault! Exiting.')
+        except Exception as e:
+            self.logger.critical('AuditorX could not log in to Vault! Exiting.')
+            self.logger.critical(e)
             sys.exit()
         for file in self.node_files:
             self.handle_node(file)
@@ -82,14 +82,19 @@ class Auditor(object):
             self.network_audit(node_config)
 
     def server_audit(self, config):
-        server = node.Node(self.metadata_dir)
+        server = node.Node(logger=self.logger)
         server.name = config['name']
         server.host = config['host']
+        server.metadata_dir = '{0}/{1}'.format(self.metadata_dir, server.name)
         server.secret_path = config['secret_path']
         if 'files' in config:
             server.files = config['files']
         if 'dirs' in config:
             server.dirs = config['dirs']
+        if 'exceptions' in config:
+            server.except_dirs = config['exceptions']
+        if 'exceptions' in config:
+            server.skip = config['exceptions']
         if 'port' in config:
             server.port = config['port']
         server.known_hosts = self.known_hosts
@@ -97,11 +102,13 @@ class Auditor(object):
         for key, value in login_info.items():
             server.user = key
             server.password = value
-
+            
         self.logger.info('Instantiation complete. Beginning audit of {}'.format(server.name))
         server.connect()
-        server.metadata_dir = '{0}/{1}'.format(self.metadata_dir, server.name)
-        server.check_files()
+        try:
+            server.check_files()
+        except PermissionError:
+            self.logger.error('There was a permissions error on {}!'.format(server.name))
         server.audit_files()
         server.reconcile()
         server.close_connection()
