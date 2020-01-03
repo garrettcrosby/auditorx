@@ -9,16 +9,20 @@ import json
 
 class Node(object):
 
-    def __init__(self, metadata_dir='', name=None, host=None, files=None,
-                 dirs=None, password=None, known_hosts=None, user=None):
+    def __init__(self, metadata_dir=None, name=None, host=None, logger=None,
+                password=None, known_hosts=None, user=None, ssh_port=22):
         self.metadata_dir = metadata_dir
         self.name = name
         self.host = host
-        self.files = files
-        self.dirs = dirs
+        self.logger = logger
+        self.files = []
+        self.dirs = []
+        self.skip = []
+        self.except_dirs = []
         self.password = password
         self.known_hosts = known_hosts
         self.user = user
+        self.port = ssh_port
         self.modified_files = {}
         self.metadata = {}
         #self.metadata_file not defined in init because metadata_dir might not be defined at init time
@@ -26,7 +30,7 @@ class Node(object):
     def connect(self):
         client = paramiko.SSHClient()
         client.load_host_keys(self.known_hosts)
-        client.connect(self.host, username=self.user, password=self.password)
+        client.connect(self.host, username=self.user, password=self.password, port=self.port)
         self.client = client
         self.sftp = client.open_sftp()
 
@@ -37,6 +41,8 @@ class Node(object):
     def sftp_walk(self, rootdir):
         for obj in self.sftp.listdir(rootdir):
             remote_path = os.path.join(rootdir, obj)
+            if remote_path in self.skip:
+                continue
             remote_attr = self.sftp.lstat(remote_path)
             if stat.S_ISDIR(remote_attr.st_mode):
                 self.sftp_walk(remote_path)
@@ -46,12 +52,15 @@ class Node(object):
                 self.metadata.update(mtime)
 
     def check_files(self):
-        for file in self.files:
-            remote_attr = self.sftp.lstat(file)
-            mtime = {file: remote_attr.st_mtime}
-            self.metadata.update(mtime)
         for dir in self.dirs:
             self.sftp_walk(dir)
+        for file in self.files:
+            try:
+                remote_attr = self.sftp.lstat(file)
+                mtime = {file: remote_attr.st_mtime}
+                self.metadata.update(mtime)
+            except FileNotFoundError:
+                self.logger.error('A file on {0} was not found.({1})'.format(self.name, file))
 
     def audit_files(self):
         self.metadata_file = '{}/metadata.json'.format(self.metadata_dir)
@@ -66,7 +75,7 @@ class Node(object):
             try:
                 current_mtime = current_meta[file]
             except:
-                #log new file found
+                self.logger.warning('New file found on server {0} ({1}'.format(self.name, file))
                 current_mtime = 0
             new_mtime = self.metadata[file]
             if new_mtime != current_mtime:
@@ -78,8 +87,14 @@ class Node(object):
             local_dir = os.path.dirname(local_path)
             if not os.path.exists(local_dir):
                 os.makedirs(local_dir, exist_ok=True)
+            print('getting file {}'.format(file))
             with open(local_path, 'wb') as f:
-                self.sftp.getfo(file, f)
+                try:
+                    self.sftp.getfo(file, f)
+                except PermissionError:
+                    self.logger.error('Permission error on {}'.format(file))
+                except Exception as e:
+                    self.logger.error('Error with file {0} on {1}. Exception: {2}'.format(file, self.name, e))
 
     def write_metadata(self):
         if not os.path.exists(self.metadata_dir):
@@ -105,7 +120,6 @@ class Node(object):
             if file not in self.files:
                 self.modified_files.update({file: 'delete'})
         self.get_files(files_add)
-
 
 #inheritance is mostly for attributes. Node methods will not work on a networknode
 class NetworkNode(Node):
@@ -142,6 +156,9 @@ class NetworkNode(Node):
 
     def update_network_config(self):
         config_file = self.metadata_dir + '/config.txt'
+        #check that path exists
+        if not os.path.exists(self.metadata_dir):
+            os.makedirs(self.metadata_dir, exist_ok=True)
         with open(config_file, 'w') as f:
             f.write(self.new_config)
         self.modified_files.update({config_file: 'add'})
