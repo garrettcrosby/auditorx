@@ -156,8 +156,7 @@ class Auditor(object):
         repo = Repo(self.git_repo)
         untracked = repo.untracked_files
         tracked = self.git_tracked_files()
-        #git returns files without the full path, which the git_tracked_files method does
-        #so these shenanigans are necessary
+        #reconcile the tracked and untracked files
         for file in tracked:
             for untracked_file in untracked:
                     if file.find(untracked_file) != -1:
