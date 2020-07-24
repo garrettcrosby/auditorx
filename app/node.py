@@ -28,11 +28,14 @@ class Node(object):
         #self.metadata_file not defined in init because metadata_dir might not be defined at init time
 
     def connect(self):
-        client = paramiko.SSHClient()
-        client.load_host_keys(self.known_hosts)
-        client.connect(self.host, username=self.user, password=self.password, port=self.port)
-        self.client = client
-        self.sftp = client.open_sftp()
+        try:
+            client = paramiko.SSHClient()
+            client.load_host_keys(self.known_hosts)
+            client.connect(self.host, username=self.user, password=self.password, port=self.port)
+            self.client = client
+            self.sftp = client.open_sftp()
+        except Exception as e:
+            self.logger.error('There was an issue connecting to {0}! Exception: {1}'.format(self.host))
 
     def close_connection(self):
         self.client.close()
